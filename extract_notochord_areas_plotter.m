@@ -1,33 +1,47 @@
 clear all;clc;close all
-%8bit files pre-processed gaussian blur and background subtracted
-folder_path= uigetdir();
-file_finder=dir([folder_path,'*_g_bc*tif*']);
-%parameters of the simulation, estimated by running a few scenarios
+%8bit files pre-processed using gaussian blur and then background subtracted
+%using rolling ball in ImageJ, then collected all in the same folder
+%folder_path= uigetdir();
+folder_path_c= uigetdir();
+folder_path=strcat(folder_path_c,'/');
+file_finder=dir([folder_path,'*tif*']);
+%notochord masks are subsequently created and stored in a folder name bn_files
+bn_folder_nm=strcat(folder_path,'bn_files/');
+if(~exist(bn_folder_nm,'dir'))
+    mkdir(bn_folder_nm);
+end    
+%parameters of the simulation, estimated by testing on a few images
+%threshold beyond which considered real signal
 thresh_im=5;
+%clusters detected between this dist in pixels consider part of same
+%segment
 dist_merge=80;
+%threshold for ignoring any small segmented clusters, considered noise
 noise_thresh=50;
+%pixel 2 micron conversion used from image settings and kept same throughout. 
+%This could be replaced by information from image metadata. 
 pixel_2_mic=0.455;
-%set criteria for identifying a seed
 c_seeds=[];
 nog3_seeds=[];
+%criteria to identify seed locations along the Dorsal-Ventral axis
 seed_min=0.25;
 seed_max=0.75;
 for ff=1:length(file_finder)
     struct_ff=file_finder(ff);
     file_to_read=struct_ff.name
     file_read=imread(strcat(folder_path,file_to_read));
-    %notochord masks are created and stored 
-    th_nm=strcat(folder_path,'bn_files/',extractBefore(file_to_read,'.tif'),'_chord_mask.txt');
+    th_nm=strcat(bn_folder_nm,extractBefore(file_to_read,'.tif'),'_chord_mask.txt');
     if(~isfile(th_nm))
-        figure(1);imshow(imcomplement(imadjust(file_read)))
+        figure(4);imshow(imcomplement(imadjust(file_read)))
         hold on
-        r2=drawpolygon;
+        ax=gca;
+        r2=drawpolygon(ax);
         c3=r2.Position(:,1);
         c4=r2.Position(:,2);
         bw1=roipoly(file_read,r2.Position(:,1),r2.Position(:,2));
         imshow(bw1)
-        writematrix(bw1,strcat(folder_path,'bn_files/',extractBefore(file_to_read,'.tif'),'_chord_mask.txt'));
-        clf(1)
+        writematrix(bw1,strcat(bn_folder_nm,extractBefore(file_to_read,'.tif'),'_chord_mask.txt'));
+        clf(4)
     else
         bw1=load(th_nm);
     end
@@ -48,12 +62,16 @@ for ff=1:length(file_finder)
     all_cols=all_centroids(:,1);
     [all_cols_sorted,indices]=sort(all_cols,'ascend');
     props_sorted=props_cor(indices);
-    %merge similar groups together
+    %merge similar groups together, using the function join_peaks_close
     groups_to_merge=join_peaks_close(all_cols_sorted,dist_merge);
-    %create new groups based on merging and also confirm centroid positions
+    %create new groups based on merging
+    %this list collects all the merged areas
     new_area_list=zeros(length(groups_to_merge),1);
+    %this list estimates width of the detected clusters
     new_ap_extent=zeros(length(groups_to_merge),1);
+    %this list estimates extent of the clusters along Dorsal-Ventral axis
     new_dv_extent=zeros(length(groups_to_merge),1);
+    %additional list stores areas in microns, and also mean centroid pos
     new_area_pos=zeros(length(groups_to_merge),2);
     for gg = 1:length(groups_to_merge)
         list_gg=groups_to_merge{gg};
@@ -78,6 +96,7 @@ for ff=1:length(file_finder)
             nog3_seeds=[nog3_seeds;new_dv_extent(gg,1)];
         end        
     end
+    %these functions are for plotting
     if(contains(file_to_read,'Control'))
         figure(1)
         h1=scatter(new_area_pos(:,2),new_area_pos(:,1),50,'MarkerFaceColor','#77AADD','MarkerEdgeColor','#77AADD');
@@ -124,7 +143,7 @@ set(gca,'fontsize',24,'fontname','ariel','linewidth',2)
 %figure 3
 f=figure(3);
 f.Position=[100 100 950 600]
-x1=0:2600;
+x1=0:2600; %this limit is estimated from the image dimensions
 y1=seed_min*ones(length(x1),1);
 y2=seed_max*ones(length(x1),1);
 plot(x1,y1,'k--','linewidth',2)
@@ -135,9 +154,8 @@ legend([h1pp,h2pp],'CONTROL','NOG3')
 xlabel('AP Axis (\mum)','interpreter','tex')
 ylabel('Cluster Extent Along DV')
 set(gca,'fontsize',24,'fontname','ariel','linewidth',2)
-
-
-%figure as scattergory
+%finally display the percentage of detected clusters which get counted as
+%seeds
 c_seeds_f1=c_seeds>0.25;
 c_seeds_f2=c_seeds<0.75;
 c_seeds_f=c_seeds(c_seeds_f1&c_seeds_f2);
@@ -147,4 +165,5 @@ nog3_seeds_f1=nog3_seeds>0.25;
 nog3_seeds_f2=nog3_seeds<0.75;
 nog3_seeds_f=nog3_seeds(nog3_seeds_f1 & nog3_seeds_f2);
 nog3_frac=1-(length(nog3_seeds_f)/length(nog3_seeds))
-
+disp_text=['fraction seeds in control ', num2str(c_frac),' in noggin overexpression ',num2str(nog3_frac)];
+disp(disp_text)
